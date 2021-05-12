@@ -1,0 +1,36 @@
+<tr name="mystery_box" {{ 'class="info"' if 'live' == mystery_box.status }} data-id="{{ mystery_box.id }}">
+    <td {% if 'live' != mystery_box.status %}name="drag-cell">
+        <span class="glyphicon glyphicon-align-justify"></span{% endif %}>
+    </td>
+    <td>
+        <div class="btn-group">
+            <a class="btn btn-sm btn-default dropdown-toggle" data-toggle="dropdown" href="#">
+                <i class="glyphicon glyphicon-cog"></i>
+                <span class="caret"></span>
+            </a>
+            <ul class="dropdown-menu">
+                <li><a href="/{{ APP_URL }}/mystery_boxes/edit/{{ mystery_box.id }}">Edit</a></li>
+                <li class="divider"></li>
+                <li><a class="topps-duplicate" data-pk="{{ mystery_box.id }}" href="#">Duplicate</a></li>
+            </ul>
+        </div>
+    </td>
+    <td><a href="/{{ APP_URL }}/mystery_boxes/edit/{{ mystery_box.id }}">{{ mystery_box.internal_name }}</a></td>
+    <td>
+        <font class="mysterybox-status-{{ mystery_box.status if mystery_box }}">
+            {{ (mystery_box.status if mystery_box) | title }}
+        </font>
+    </td>
+    <td>
+        {% if mystery_box.expiration_time %}
+            {{ mystery_box.expiration_time | utc_to_tz(user.timezone) | format_datetime("history_table") }}
+        {% endif %}
+    </td>
+    <td name="rank_idx">
+        {% if 'live' != mystery_box.status %}
+            {{ mystery_box_loop.index }}
+        {% else %}
+            Live Now
+        {% endif %}
+    </td>
+</tr>

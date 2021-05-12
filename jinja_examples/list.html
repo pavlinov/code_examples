@@ -1,0 +1,155 @@
+{% extends "common/site_base.html" %}
+{% set active_page = "cogs" %}
+{% block page_title %}List | Mystery Box {% endblock %}
+
+{% block site_body %}
+<div class="page-header">
+    <h1>Mystery Boxes</h1>
+
+    <ul class="nav nav-pills">
+        <li class="active"><a href="/{{ APP_URL }}/mystery_boxes/list">List</a></li>
+        <li><a href="/{{ APP_URL }}/mystery_boxes/create">New</a></li>
+    </ul>
+</div>
+
+<div class="col-md-12">
+    <ul class="nav nav-tabs">
+        <li {% if current_tab == 'live_pending' %} class="active" {% endif %}>
+            <a href="/{{ APP_URL }}/mystery_boxes/list?tab=live_pending">Live/Pending</a>
+        </li>
+        <li {% if current_tab == 'expired' %} class="active" {% endif %}>
+            <a href="/{{ APP_URL }}/mystery_boxes/list?tab=expired">Expired</a>
+        </li>
+        <li {% if current_tab == 'draft' %} class="active" {% endif %}>
+            <a href="/{{ APP_URL }}/mystery_boxes/list?tab=draft">Draft</a>
+        </li>
+    </ul>
+</div>
+
+<div class="col-md-12">
+    <table class="table table-bordered table-condensed topps-mystery-box-current" id="topps-mystery-box">
+        <thead>
+          <tr>
+            <th></th><th></th><th>Mystery Box</th><th>Status</th><th>Expiration</th><th>Next Mystery Box Order</th>
+          </tr>
+        </thead>
+
+        {% if 'live_pending' == current_tab and mystery_boxes | length > 0 %}
+            <tbody class="live-mystery-box">
+                {% if 'live' == mystery_boxes[0].get('status') %}
+                    {% set mystery_box = mystery_boxes.pop(0) %}
+                    {% include 'mystery_boxes/partials/mystery_box_list_tr.html' with context %}
+                {% endif %}
+            </tbody>
+        {% endif %}
+
+        <tbody class="sorted-table mystery-boxes">
+            {% for mystery_box in mystery_boxes | sort(attribute='rank') %}
+                {% set mystery_box_loop = loop %}
+                {% include 'mystery_boxes/partials/mystery_box_list_tr.html' %}
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<script type="text/javascript">
+$(document).ready(() => {
+    let sortable_mystery_box = $('.sorted-table.mystery-boxes').sortable({
+        containerSelector: 'tbody',
+        itemSelector: 'tr',
+        handle: "td[name='drag-cell']",
+        placeholder: '<tr class="placeholder"><td colspan="10">&nbsp;</td></tr>',
+
+        onDrop: function (item, container, _super) {
+            var mystery_box_ids = sortable_mystery_box.sortable("serialize").get().join();
+
+            $.post(`${app_url}mystery_boxes/ajax/update_order`, { mystery_box_ids: mystery_box_ids })
+            .then(
+                (response) => {
+                    toastr.success(
+                        "Reordering success",
+                        `(${response.status_msg})`,
+                        { positionClass: "toast-bottom-right" }
+                    );
+
+                    let rank_idx = 1;
+                    $("td[name='rank_idx']").each(
+                        (i, el) => { if ('Live Now' == el.innerText) return; $(el).html(rank_idx); rank_idx++;}
+                    );
+                },
+                (error) => {
+                    toastr.error("Error reordering", `(${error.message})`, { positionClass: "toast-bottom-right" });
+                }
+            );
+            _super(item, container)
+        },
+
+        serialize: function (parent, children, isContainer) {
+            return isContainer ? children.join() : parent.attr("data-id");
+        }
+    });
+
+    $('table#topps-mystery-box').on('click', '.topps-duplicate', (event) => {
+        let pk = event.target.dataset.pk;
+        let tr = $(event.target).parents('tr')
+        let spinner = $(event.target).closest("div").find("a>i:first");
+        spinner.addClass("fa-spin");
+
+        $.post(`${app_url}mystery_boxes/ajax/duplicate/${pk}`, {})
+        .then(
+            (response) => {
+                if (response.status === 'ok') {
+                    let tr_html = `<tr name="mystery_box" data-id="${response.mystery_box.id}">
+                        <td class="drag-cell"><span class="glyphicon glyphicon-align-justify"></span></td>
+                        <td>
+                            <div class="btn-group">
+                                <a class="btn btn-sm btn-default dropdown-toggle" data-toggle="dropdown" href="#">
+                                    <i class="glyphicon glyphicon-cog"></i>
+                                    <span class="caret"></span>
+                                </a>
+                                <ul class="dropdown-menu">
+                                    <li><a href="${app_url}mystery_boxes/edit/${response.mystery_box.id}">Edit</a></li>
+                                    <li class="divider"></li>
+                                    <li>
+                                        <a class="topps-duplicate" data-pk="${response.mystery_box.id}" href="#">
+                                            Duplicate
+                                        </a>
+                                    </li>
+                                </ul>
+                            </div>
+                        </td>
+                        <td>
+                            <a href="${app_url}mystery_boxes/edit/${response.mystery_box.id}">
+                                ${response.mystery_box.internal_name}
+                            </a>
+                        </td>
+                        <td>
+                            <font class="mysterybox-status-live" style="text-transform: capitalize;">
+                                ${response.mystery_box.status}
+                            </font>
+                        </td>
+                        <td>${response.mystery_box.expiration_time}</td>
+                        <td>${response.mystery_box.rank}</td>
+                    </tr>`;
+
+                    $('table.topps-mystery-box-current tr:last').after(tr_html);
+
+                    toastr.success(
+                        "Mystery Box",
+                        `(${response.mystery_box.internal_name}) duplicated and moved to DRAFT tab`,
+                        { positionClass: "toast-bottom-right" }
+                    );
+                }
+            },
+            (error) => {
+                toastr.error("Mystery Box", `(${error})`, { positionClass: "toast-bottom-right" });
+            })
+        .always(() => {
+              spinner.removeClass("fa-spin");
+        });
+        event.preventDefault();
+    });
+});
+</script>
+
+{% endblock %}

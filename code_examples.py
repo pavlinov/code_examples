@@ -2,40 +2,32 @@ import json, os
 import datetime
 import humanize
 from config import Config as LambdaConfig
-from CabooseUtilities.http.IPC import IPC
-from CabooseUtilities.aws import sqs_client
-from CabooseUtilities.aws import redis_client
-from ToppsHttp.auth import ToppsAuthentication
+from OurUtilities.http.IPC import IPC
+from OurUtilities.aws import sqs_client
+from OurUtilities.aws import redis_client
+from TempoHttp.auth import TempoAuthentication
 SQS_NAME = LambdaConfig.config.SQS_NAME
 REDIS_KEY = LambdaConfig.config.tag + '_last_run'
 REDIS_CNX = redis_client.RedisConnectionInfo(host=LambdaConfig.config.REDIS_CACHE_HOST,
-                                                      name=LambdaConfig.config.REDIS_CACHE_NAME,
-                                                      port=LambdaConfig.config.REDIS_CACHE_PORT,
-                                                      db_num=LambdaConfig.config.REDIS_CACHE_DB_NUM)
+                                            name=LambdaConfig.config.REDIS_CACHE_NAME,
+                                            port=LambdaConfig.config.REDIS_CACHE_PORT,
+                                            db_num=LambdaConfig.config.REDIS_CACHE_DB_NUM)
 redis_client.connect(REDIS_CNX)
 
 def lambda_handler(event, context):
     return_dict = {}
-    print(f"running ContestWhoToScore with event: {event}")
+    print(f"running WhoToScore with event: {event}")
 
     LambdaConfig.config['app'] = event.get("app", os.environ.get('app', LambdaConfig.config.app))
-    LambdaConfig.config['request_id'] = event.get('request_id', ToppsAuthentication.generateRequestID())
+    LambdaConfig.config['request_id'] = event.get('request_id', TempoAuthentication.generateRequestID())
     LambdaConfig.config['contests_url'] = event.get("contests_url", LambdaConfig.config.contests_url)
-    '''
-    1. Query the game_scores table to get all the game_scores entries that have been updated since the last time this lambda ran.
-    2. Store off in Redis the greatest timestamp from any received game_scores retrieved in step one.
-    3. This gives a list of game_keys. Turn this list (with possible duplicates) into a set
-    4. Using this set of game_keys, build a list of contest_instances that have these game_keys as a part of it
-    5. Using the list of contest_definitions, build a list of contest_intsances that have those definitions
-    6. The output of this will be a list of affected contest_instances that have new scoring events.
-    7. pump this list onto the ContestScoringSQS queue
-    '''
+    
     print(f"full config: {LambdaConfig.config}")
     right_now = datetime.datetime.utcnow()
     print(f"Now = {right_now}")
     last_run = redis_client.get_key(connection_name=LambdaConfig.config.REDIS_CACHE_NAME, key=REDIS_KEY)
     print(f"Last run in redis = {last_run}")
-    #last_run = run_at - datetime.timedelta(days=LambdaConfig.config.MAX_INTERVAL_DAYS)
+
     if last_run:
         last_run = datetime.datetime.strptime(last_run, "%Y-%m-%d %H:%M:%S.%f")
     else:
@@ -174,7 +166,6 @@ def get_contest_instances_by_definition_ids(contest_instances_ids:list, app:str,
     return process_response('contest_instances', contest_instances_response)
 
 
-# With the following, you can run this script locally before deploying to Lambda using test data.
 if __name__ == "__main__":
     print("Running Locally using test data")
 

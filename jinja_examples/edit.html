@@ -1,0 +1,388 @@
+{% extends "common/site_base.html" %}
+{% set active_page = "cogs" %}
+{% block page_title %}{{ mystery_box.internal_name }} | Mystery Box{% endblock %}
+
+{% block site_body %}
+<div class="page-header">
+    <h1>{{ (action | title) if action }} <small> {{ mystery_box.internal_name }}</small></h1>
+
+    <ul class="nav nav-pills">
+        <li><a href="/{{ APP_URL }}/mystery_boxes/list">List</a></li>
+        <li {% if action == 'edit' %}class="active{% else %}class="disabled"{% endif %}"><a href="#">Edit</a></li>
+        <li {{ 'class="active"' if action == 'new' }}><a href="/{{ APP_URL }}/mystery_boxes/create">New</a></li>
+    </ul>
+</div>
+
+<script type="text/javascript">
+    function doValidation(event) {
+        let errors = 0;
+        let container_idx = 0;
+
+        $('.btn-custom-validation').prop('disabled', true);
+
+        for(let container of mystery_box.containers) {
+            container_idx++;
+            if (0 > container.cooldown_sec) {
+                toastr.error(
+                    `Cooldown Timer - required, must be greater than or equal 0`,
+                     `Container ${container_idx}`,
+                      {positionClass: "toast-bottom-right"});
+                errors++;
+            }
+
+            let pack_idx = 0
+            for(let pack of container.reformatted.packs) {
+                pack_idx++;
+                title = `Container ${container_idx}, Pack ${pack_idx}`;
+                if (!pack.pack_id) {
+                    toastr.error(`Pack is unselected`, title, {positionClass: "toast-bottom-right"});
+                    errors++;
+                }
+            }
+
+            if (0 === container.reformatted.packs.length &&
+                0 === container.redeemable.customization_unlocks.avatar.length &&
+                0 === container.redeemable.gems && 0 === container.redeemable.coins) {
+
+                title = `Container ${container_idx}`;
+                toastr.error('At least 1 reward is required', title, { positionClass: "toast-bottom-right" });
+                errors++;
+            };
+        }
+
+        title = `Container ${container_idx}`;
+
+        if (0 < errors) {
+            event.preventDefault();
+            $('.btn-custom-validation').prop('disabled', false);
+            return false;
+        }
+
+        return true;
+    }
+
+    function updateContainers() {
+        for(let container of mystery_box.containers) {
+            if (0 === container.reformatted.packs.length) {
+                container.redeemable.packs = {};
+                ractiveMysteryBox.update();
+            }
+        }
+    }
+</script>
+
+<form
+    method="post"
+    enctype="multipart/form-data"
+    accept-charset="utf-8"
+    class="form-validate"
+    onsubmit="updateContainers();return doValidation(event);">
+
+    <div class="row">
+        <div class="col-md-2">
+            <span class="text-danger">*</span> = Required
+        </div>
+        <div class="col-md-offset-8 col-md-2">
+            <button type="submit" class="btn btn-primary btn-block btn-custom-validation">Save</button>
+        </div>
+    </div>
+    <div id="mystery-box-output"></div>
+    <br>
+    <div class="row">
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-primary btn-block btn-custom-validation">Save</button>
+        </div>
+    </div>
+</form>
+
+{% raw %}
+<script id="containers" type='text/ractive'>
+    <input name="containers" type="hidden" twoway="false" value="{{ JSON.stringify(mystery_box.containers) }}">
+    <input
+        name="rank"
+        type="hidden"
+        twoway="false"
+        data-old-value="{% endraw %}{{ mystery_box.rank }}{% raw %}"
+        value="{{ mystery_box.rank }}">
+
+{% endraw %}
+    <div class="row">
+        <div class="col-md-4">
+            <div class="form-group">
+                <label for="status">Internal Name<span class="text-danger">*</span></label>
+                <input
+                    class="form-control"
+                    id="internal_name"
+                    name="internal_name"
+                    type="text"
+                    value="{{ mystery_box.internal_name if mystery_box.internal_name != None }}"
+                    required>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="form-group">
+                <label for="status">Status<span class="text-danger">*</span>
+                    <i class="fa fa-refresh fa-spin fa-fw" id="status-refresh-icon" style="display: none;"></i>
+                </label>
+                <select
+                    name="status"
+                    id="status"
+                    class="form-control"
+                    value="{% raw %}{{ mystery_box.status }}{% endraw %}"
+                    data-old-value="{{ mystery_box.status }}"
+                    on-change="@this.fire('checkStatus', @context, @node)"
+                    required>
+
+                    {% for status in statuses %}
+                        <option {% if mystery_box.status == status %}selected{% endif %} value="{{ status }}">
+                            {{ status | title }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="form-group">
+                <label for="expires_at">Expires At</label> ({{ user.timezone }})
+                <div class="input-group date datetimepicker">
+                    <input
+                        class="form-control"
+                        name="expiration_time"
+                        type="text"
+                        value="{% if mystery_box.expiration_time %}{{ mystery_box.expiration_time | utc_to_tz(user.timezone) | format_datetime("datetimepicker")}}{% endif %}">
+                    <div class="input-group-addon"><span class="glyphicon glyphicon-calendar"></span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+{% raw %}
+
+    <div class="row">
+        <div class="col-md-12">
+            {{#each mystery_box.containers: index}}
+                <div class="container-fluid">
+                    <div class="panel panel-default">
+                        <div class="panel-body">
+                            <div class="row">
+                                <div class="col-md-3" class="redeemable-title">
+                                    <h4 id="container-name">
+                                        {{#if (index != 0) }}
+                                            <a class="btn btn-default" on-click="@this.fire('removeContainer', @context, index)" title="Remove container">
+                                                <span class="fa fa-times text-danger"></span>
+                                            </a>&nbsp;&nbsp;
+                                        {{/if}}
+                                    Container {{index + 1}}</h4>
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-offset-7 col-md-3">
+                                    <div class="text-right">
+                                        <label for="xp" style="padding-top: 6px;">
+                                            Cooldown Timer
+                                            <span class="text-danger">*</span>
+                                        </label>(in seconds)
+                                    </div>
+                                </div>
+                                <div class="col-md-2 form-group">
+                                    <input
+                                        class="form-control"
+                                        type="number"
+                                        min="0"
+                                        value="{{ this.cooldown_sec }}"
+                                        name="cooldown_sec"
+                                        required>
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-1 col-xs-3">
+                                    <div class="form-group text-right">
+                                        <label for="coins">Coins</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-2 col-xs-8">
+                                    <input
+                                        min="0"
+                                        oninput="validity.valid||(value='0'); if (!value){value='0'};"
+                                        name="{{index}}_redeemable_coins"
+                                        type="number"
+                                        value="{{ mystery_box.containers[index].redeemable.coins }}"
+                                        class="form-control">
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-1 col-xs-3">
+                                    <div class="form-group text-right">
+                                        <label for="coins">Gems</label>
+                                    </div>
+                                </div>
+
+                                <div class="col-md-2 col-xs-8">
+                                    <input
+                                        min="0"
+                                        oninput="validity.valid||(value='0'); if (!value){value='0'};"
+                                        name="{{index}}_redeemable_gems"
+                                        type="number"
+                                        value="{{ mystery_box.containers[index].redeemable.gems }}"
+                                        class="form-control">
+                                </div>
+                            </div>
+
+                            <multiplePacksComponent
+                                packs={{ mystery_box.containers[index].reformatted.packs }}
+                                prefix_name='{{index}}_mystery_box_'>
+                            </multiplePacksComponent>
+                            <multipleAvatarsComponent
+                                avatars={{ mystery_box.containers[index].redeemable.customization_unlocks.avatar }}
+                                prefix_name='{{index}}_mystery_box_'>
+                            </multipleAvatarsComponent>
+                        </div>
+                    </div>
+                </div>
+            {{/each}}
+
+            <div class="container-fluid">
+                <div class="row">
+                    <div class="col-md-4">
+                        <h4>
+                            <a class="add-store-item" on-click="@this.fire('addContainer')">
+                                <span class="glyphicon glyphicon-plus-sign"></span>
+                                Add more containers
+                            </a>
+                        </h4>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</script>
+
+{% endraw %}
+
+{% include "/common/components/multiplePacksComponent.html" %}
+{% include "/common/components/multipleAvatarsComponent.html" %}
+
+<script type="text/javascript">
+    let mystery_box = {{ mystery_box_json | safe }};
+    let url_s3_avatars = {{ url_s3_avatars | safe }};
+
+    let ractiveMysteryBox = new Ractive({
+        target: '#mystery-box-output',
+        template: '#containers',
+        data: {
+            mystery_box,
+            url_s3_avatars,
+        }
+    })
+
+    ractiveMysteryBox.on('addContainer', function() {
+        this.push(
+            'mystery_box.containers',
+            {
+                "container_type": "default",
+                "cooldown_sec": 3600,
+                "redeemable": {
+                    "gems": 0,
+                    "profile_tags_removed": [],
+                    "packs": {"": 1},
+                    "coins": 0,
+                    "profile_tags_added": [],
+                    "customization_unlocks": {"avatar": []},
+                     "xp": 0
+                }
+            }
+        );
+    });
+
+    ractiveMysteryBox.on('removeContainer', function(event, index) {
+        this.splice(`mystery_box.containers`, index, 1);
+    });
+
+    ractiveMysteryBox.on('checkStatus', function(ctx, node) {
+        let new_status = ctx.node.value;
+        let current_status = $(ctx.node).attr('data-old-value');
+        let current_rank = parseInt($("input[name='rank']").attr('data-old-value'));
+
+        if (new_status != current_status && 'live' == new_status) {
+            getMysteryBox('live').then(
+                (response) => {
+                    if ('live' === response.mystery_box.status) {
+                        toastr.error("There can be only one LIVE definition.<br>Please choose another status","", {positionClass: "toast-bottom-right"});
+                        ractiveMysteryBox.set('mystery_box.status', current_status);
+                        return false;
+                    }
+                },
+                (error) => {
+                    if (404 !== error.status) {
+                        toastr.error("Status handle error","", {positionClass: "toast-bottom-right"});
+                        return false;
+                    }
+                }
+            );
+        }
+
+    ractiveMysteryBox.set('mystery_box.rank', current_rank);
+        if (new_status != current_status && 'pending' === new_status) {
+            getMysteryBox('pending').then(
+                (response) => {
+                    ractiveMysteryBox.set('mystery_box.rank', response.mystery_box.rank + 1);
+                }
+            )
+        }
+    });
+
+    function getMysteryBox(status) {
+        $("#status-refresh-icon").show();
+        $("button[type='submit']").prop("disabled", true);
+
+        return new Promise((resolve, reject) => {
+            $.post(`${app_url}mystery_boxes/ajax/search_mystery_box`, {status})
+            .then(
+                (response) => {
+                    resolve(response);
+                },
+                (error) => {
+                    reject(error);
+                }
+            ).always(() => {
+                 $("#status-refresh-icon").hide();
+                 $("button[type='submit']").prop("disabled", false);
+            })
+        });
+    }
+
+    ractiveMysteryBox.observe(
+        'mystery_box.containers.*.reformatted.packs.*',
+        function (pack, callback, path, containerIndex, packIndex) {
+            const packs = ractiveMysteryBox.get(`mystery_box.containers.${containerIndex}.reformatted.packs`);
+            let originalPacks = {};
+
+            for (let i = 0, il = packs.length; i < il; i++) {
+                if (packs[i].pack_id) {
+                    originalPacks[packs[i].pack_id] = packs[i].pack_count;
+                }
+            }
+
+            ractiveMysteryBox.set(`mystery_box.containers.${containerIndex}.redeemable.packs`, originalPacks);
+        }
+    );
+
+</script>
+{% endblock %}
+
+{% block end_body %}
+<script type="text/javascript">
+    $(document).ready(function() {
+        let has_expires_at = {{ has_expires_at | lower }}
+
+        if (has_expires_at) {
+            message_center.warning("Packs rewarded via Engagement/Award features should not have a <b>Sell Out</b> time as this can impact UX & Client performance", "WARNING:");
+        }
+    });
+</script>
+{% endblock %}
